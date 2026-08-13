@@ -11,12 +11,9 @@ struct SubscribeMessage {
     jwt: String,
 }
 
-/// Calls the same coinbase.jwt_generator.build_ws_jwt() the C++ version
-/// used via pybind11 -- same sanctioned generator, PyO3 in place of
-/// pybind11 on the Rust side. Python::attach owns interpreter/GIL
-/// lifetime for the duration of the closure, which is the piece that
-/// caused the scoped_interpreter destruction-order crash in the C++
-/// version.
+/// Calls the same coinbase.jwt_generator.build_ws_jwt() using PyO3.
+/// Python::attach owns interpreter/GIL lifetime for the duration of
+/// the closure.
 fn build_ws_jwt(api_key: &str, api_secret: &str) -> PyResult<String> {
     Python::attach(|py| {
         let jwt_generator = PyModule::import(py, "coinbase.jwt_generator")?;
@@ -28,7 +25,6 @@ fn build_ws_jwt(api_key: &str, api_secret: &str) -> PyResult<String> {
     })
 }
 
-/// Rust equivalent of coinbase::GetSubscribeMsg from subscription.h.
 pub fn get_subscribe_msg(symbols: &[String], secrets_dir: &str) -> String {
     let api_key = std::fs::read_to_string(format!("{secrets_dir}/api_key.txt"))
         .expect("failed to read api_key.txt")

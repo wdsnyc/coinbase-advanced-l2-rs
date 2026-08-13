@@ -1,19 +1,12 @@
 use clap::Parser;
 
-/// Command-line arguments. --symbol_list and --secrets_dir are required,
-/// same as the C++ feed's getopt_long setup (missing either one in the
-/// C++ version prints help and exits; clap does the same automatically
-/// for a required field with no default).
-///
-/// --no_snapshots is deliberately the opposite polarity of the C++
-/// version's --snapshots: the C++ feed defaults to NOT processing
-/// snapshots (process_snapshots = false, --snapshots turns it on).
-/// This version defaults to processing snapshots, and --no_snapshots
-/// turns that off.
+/// Command-line arguments
+///    --symbol_list and --secrets_dir are required,
+///    --no_snapshots disables processing of snapshots
 #[derive(Parser, Debug)]
 #[command(rename_all = "snake_case")]
 pub struct Cli {
-    /// Comma-separated list of symbols, e.g. "BTC-USD,ETH-USD"
+    /// Comma-separated list of symbols, e.g. "BTC-USD,ETH-USD,..."
     #[arg(long, required = true, value_delimiter = ',')]
     pub symbol_list: Vec<String>,
 
@@ -66,21 +59,14 @@ mod tests {
 
     #[test]
     fn missing_secrets_dir_fails() {
-        let result = Cli::try_parse_from([
-            "coinbase-advanced-l2-rs",
-            "--symbol_list",
-            "BTC-USD",
-        ]);
+        let result = Cli::try_parse_from(["coinbase-advanced-l2-rs", "--symbol_list", "BTC-USD"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn missing_symbol_list_fails() {
-        let result = Cli::try_parse_from([
-            "coinbase-advanced-l2-rs",
-            "--secrets_dir",
-            "/some/path",
-        ]);
+        let result =
+            Cli::try_parse_from(["coinbase-advanced-l2-rs", "--secrets_dir", "/some/path"]);
         assert!(result.is_err());
     }
 }

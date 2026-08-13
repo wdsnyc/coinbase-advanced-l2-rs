@@ -4,27 +4,26 @@ use std::sync::{Arc, Mutex};
 
 use tungstenite::{connect, Message};
 
+use crate::display;
 use crate::event::ChannelMessage;
 use crate::order_book::{OrderBook, PriceBook, PriceMap};
 use crate::products::{self, PrecisionTable};
 use crate::side::Side;
 use crate::subscription;
-use crate::display;
 
 const WS_URL: &str = "wss://advanced-trade-ws.coinbase.com";
 
-/// Rust equivalent of coinbase_feed::run() -- same shape as the C++
-/// version's synchronous Boost.Asio read loop: connect, send the
-/// subscribe message, then block on read() in a loop, one message at a
-/// time, same OS thread throughout. No async runtime involved.
+/// Rust equivalent of C++ coinbase_feed::run() which has a
+/// synchronous Boost.Asio read loop: connect, send the subscribe
+/// message, then block on read() in a loop, one message at a time,
+/// same OS thread throughout. No async runtime involved.
 pub fn run(symbols: &[String], secrets_dir: &str, process_snapshots: bool) {
     // Step 6 -- precision table, built once before the book exists.
     let precision = products::build_precision_table(symbols, secrets_dir);
 
     let subscribe_msg = subscription::get_subscribe_msg(symbols, secrets_dir);
 
-    let (mut socket, _response) =
-        connect(WS_URL).expect("failed to connect to Coinbase WS");
+    let (mut socket, _response) = connect(WS_URL).expect("failed to connect to Coinbase WS");
 
     println!("connected to {WS_URL}");
 
@@ -36,46 +35,22 @@ pub fn run(symbols: &[String], secrets_dir: &str, process_snapshots: bool) {
     // created lazily as each product_id is first seen.
     let mut book: PriceMap = PriceMap::new();
 
-    // Counts snapshot-type events seen (not applied) -- matches
-    // orderBook.h's snapshotNum: incremented regardless of
-    // process_snapshots, so the mismatch against actual book size is
-    // what makes --no_snapshots's effect visible. Only ever touched
-    // from this thread, so a plain u64 is enough -- no Arc/Mutex
-    // needed here, unlike current_symbol/dump_enabled below.
-    //
-    // Expected behavior, confirmed against real testing: Coinbase sends
-    // exactly one snapshot per subscribed symbol, at subscribe time --
-    // not periodically. So this should climb to symbols.len() early in
-    // the connection and then plateau there for the rest of the
-    // session. If it climbs past that, something unusual happened (a
-    // resubscribe, a reconnect, a change in Coinbase's behavior) and is
-    // worth investigating rather than assuming is normal. Also means
-    // --no_snapshots's effect is permanent for the whole session, not
-    // just a slow start -- the book stays missing most of its levels
-    // the entire time, since the one snapshot it needed never repeats.
+    // Counts snapshot-type events seen (not applied). Coinbase sends
+    // exactly one snapshot per subscribed symbol, not periodically.
     let mut snapshot_count: u64 = 0;
 
-    // #2 -- shared state for the symbol-switch thread below. Mutex for
-    // the symbol string (no native atomic for String), AtomicBool for
-    // the dump-enabled flag -- direct match for the C++ version's
-    // std::atomic<bool> m_orderBookDump, since bool does have a real
-    // atomic type. Starts on the first symbol, dump enabled -- same
-    // defaults as coinbase_feed's constructor.
+    // shared state for the symbol-switch thread below. Mutex for
+    // the symbol string, AtomicBool for the dump-enabled flag
     let current_symbol = Arc::new(Mutex::new(symbols[0].clone()));
     let dump_enabled = Arc::new(AtomicBool::new(true));
 
-    // #3 -- mirrors readFromStdinThread(): loops forever, waits for
-    // Enter, pauses the display, prompts for a symbol, and if valid
-    // switches current_symbol and resumes. Detached, same as the C++
-    // version's thread (never joined -- runs until the process exits).
-    // symbols.to_vec() clones into an owned Vec because the closure
-    // needs 'static data: the borrow checker won't let a thread::spawn
-    // closure capture &[String] borrowed from run()'s stack frame,
-    // since that borrow wouldn't necessarily outlive the thread -- a
-    // real use-after-free in C++ if you got the lifetime wrong, a
-    // compile error here instead.
+    // readFromStdinThread(): loops forever. Enter, pauses the
+    // display, prompts for a symbol, and if valid switches
+    // current_symbol and resumes. Thread (never joined -- runs until
+    // the process exits).
     {
-        let symbols = symbols.to_vec();
+        let symbols = symbols.to_vec(); // symbols &{String] func param is only valid in
+                                        // this functions body. to_vec() clones &[String]
         let current_symbol = Arc::clone(&current_symbol);
         let dump_enabled = Arc::clone(&dump_enabled);
 
@@ -97,8 +72,7 @@ pub fn run(symbols: &[String], secrets_dir: &str, process_snapshots: bool) {
                 .read_line(&mut symbol)
                 .expect("failed to read stdin");
             // read_line keeps the trailing newline -- unlike C++'s
-            // std::getline, which strips it. Comparing against symbols
-            // without trimming would never match.
+            // std::getline, which strips it.
             let symbol = symbol.trim();
 
             if symbols.iter().any(|s| s == symbol) {
@@ -145,11 +119,7 @@ pub fn run(symbols: &[String], secrets_dir: &str, process_snapshots: bool) {
 /// acks) that don't have a "channel" field at all.
 ///
 /// When process_snapshots is false, snapshot-type events are skipped
-/// entirely -- only incremental "update" events get applied. Worth
-/// knowing: with this off, the book never receives its initial full
-/// state, only the changes since connection -- useful for keeping
-/// terminal output down while testing update handling, not something
-/// you'd want for a book that needs to reflect the real current market.
+/// entirely -- only incremental "update" events get applied
 fn handle_message(
     text: &str,
     book: &mut PriceMap,
@@ -167,13 +137,6 @@ fn handle_message(
         }
     };
 
-    // Read once, up front: while paused (waiting on the symbol-switch
-    // prompt), the per-event status prints below need to respect this
-    // too, not just the dump()/top_of_book() calls -- otherwise they
-    // keep scrolling and bury the "Press ENTER"/"Enter symbol:" prompts
-    // from the other thread. This is what looked like dump_enabled
-    // "never going false": the flag was flipping correctly, these
-    // prints just weren't checking it.
     let dumping = dump_enabled.load(Ordering::Acquire);
 
     match serde_json::from_value::<ChannelMessage>(raw.clone()) {
@@ -229,9 +192,6 @@ fn handle_message(
         }
     }
 
-    // Matches where the C++ version checks m_orderBookDump -- after
-    // processing a channel-bearing message, for both l2_data and
-    // subscriptions.
     if dumping {
         let symbol = current_symbol.lock().unwrap().clone();
 

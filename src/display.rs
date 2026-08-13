@@ -6,19 +6,13 @@ const RED: &str = "\x1b[31m";
 const GREEN: &str = "\x1b[32m";
 const RESET: &str = "\x1b[0m";
 
-/// Formats a value to a specific number of decimal places, decided at
-/// runtime -- unlike println!'s usual {:.2}, which needs the decimal
-/// count baked into the format string at compile time. {:.*} is the
-/// escape hatch: the precision comes from the *next* positional
-/// argument (here, `decimals`) rather than being written literally.
+/// Formats a value to a specific number of decimal places.
+/// Precision comes from the positional argument `decimals`
 fn fmt_num(value: f64, decimals: usize) -> String {
     format!("{:.*}", decimals, value)
 }
 
-/// Snapshot-seen count alongside current book size on each side --
-/// makes the effect of --no_snapshots visible: the count keeps
-/// climbing even when snapshots are skipped, but level counts stay
-/// tiny since nothing but incremental updates ever got applied.
+/// Snapshot-seen count alongside current book size on each side
 pub fn print_stats(order_book: &OrderBook, snapshot_count: u64) {
     println!(
         "Snapshots seen: {snapshot_count}   Bid levels: {}   Ask levels: {}",
@@ -27,12 +21,12 @@ pub fn print_stats(order_book: &OrderBook, snapshot_count: u64) {
     );
 }
 
-/// Rust equivalent of orderBook.h's dump() -- clears the screen and
-/// redraws num_levels of each side, arranged the way Coinbase's own
-/// order book view (and the C++ version) does: asks descending from
-/// worst to best at the top, a spread line, then bids descending from
-/// best to worst below -- best prices on both sides cluster around the
-/// spread in the middle.
+/// Clears screen and redraws num_levels of each side, arranged the
+/// way Coinbase's Advanced Trade Spot UI displays the order book
+/// view:
+///    - asks descending from worst to best at the top
+///    - spread line
+///    - bids descending from best to worst below
 pub fn dump(order_book: &OrderBook, product: &ProductInfo, num_levels: usize) {
     let asks = order_book.asks.get_asks(num_levels); // best (lowest) first
     let bids = order_book.bids.get_bids(num_levels); // best (highest) first
@@ -45,15 +39,14 @@ pub fn dump(order_book: &OrderBook, product: &ProductInfo, num_levels: usize) {
     println!("************** ORDER BOOK ***************");
     print_header(product);
 
-    // get_asks() is best-first (ascending) -- reverse so the display
-    // goes worst-to-best, ending at the best ask right above the spread.
+    // get_asks() is best-first (ascending)
     for (price_ticks, qty_ticks) in asks.iter().rev() {
         print_row(product, *price_ticks, *qty_ticks, RED);
     }
 
     print_spread(product, asks[0].0, bids[0].0);
 
-    // get_bids() is already best-first (descending) -- no reversal needed.
+    // get_bids() is best-first (descending)
     for (price_ticks, qty_ticks) in &bids {
         print_row(product, *price_ticks, *qty_ticks, GREEN);
     }
@@ -61,8 +54,7 @@ pub fn dump(order_book: &OrderBook, product: &ProductInfo, num_levels: usize) {
     println!("*****************************************");
 }
 
-/// Rust equivalent of orderBook.h's topOfBook() -- just the best price
-/// on each side plus the spread, no full depth walk.
+/// Best price on each side plus the spread
 pub fn top_of_book(order_book: &OrderBook, product: &ProductInfo) {
     let best_ask = match order_book.asks.get_asks(1).into_iter().next() {
         Some(pair) => pair,
@@ -84,8 +76,14 @@ pub fn top_of_book(order_book: &OrderBook, product: &ProductInfo) {
 }
 
 fn print_row(product: &ProductInfo, price_ticks: i64, qty_ticks: i64, color: &str) {
-    let price = fmt_num(product.ticks_to_price(price_ticks), product.price_decimal_places());
-    let qty = fmt_num(product.ticks_to_size(qty_ticks), product.size_decimal_places());
+    let price = fmt_num(
+        product.ticks_to_price(price_ticks),
+        product.price_decimal_places(),
+    );
+    let qty = fmt_num(
+        product.ticks_to_size(qty_ticks),
+        product.size_decimal_places(),
+    );
     println!("{color}{price:>12} {qty:>16}{RESET}");
 }
 

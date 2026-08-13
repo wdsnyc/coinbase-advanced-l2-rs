@@ -20,22 +20,11 @@ pub struct ProductInfo {
 impl ProductInfo {
     /// Converts a price string as received on the WS feed (e.g.
     /// "63962.27") into an integer number of price ticks, using this
-    /// product's quote_increment. ticks = round(price / increment) --
-    /// the general divide-and-round technique, correct even for
-    /// non-decimal tick sizes. Counting decimal places would also work
-    /// here, but only because Coinbase's increments happen to always be
-    /// powers of ten -- this doesn't rely on that being true.
-    ///
-    /// Written with explicit match on both parse() calls, rather than
-    /// .expect(), as a reference for what .expect() is actually doing
-    /// underneath. size_to_ticks below is the same logic with .expect()
-    /// -- compare the two.
+    /// product's quote_increment. ticks = round(price / increment).
+    /// The general divide-and-round technique, correct even for
+    /// non-decimal tick sizes.
     pub fn price_to_ticks(&self, price: &str) -> i64 {
         // quote_increment.parse::<f64>() returns Result<f64, ParseFloatError>.
-        // Ok(v) means parsing succeeded -- v is the f64 value, bind it to
-        // `increment` and continue. Err(e) means the string wasn't a valid
-        // float (empty, non-numeric, etc.) -- there's no sensible way to
-        // continue, so panic with a message plus e's own description.
         let increment: f64 = match self.quote_increment.parse() {
             Ok(v) => v,
             Err(e) => panic!("invalid quote_increment: {e}"),
@@ -50,12 +39,9 @@ impl ProductInfo {
         (price / increment).round() as i64
     }
 
-    /// Same technique, for size/quantity via base_increment.
+    /// Same technique above using expect, for size/quantity via base_increment.
     pub fn size_to_ticks(&self, qty: &str) -> i64 {
-        let increment: f64 = self
-            .base_increment
-            .parse()
-            .expect("invalid base_increment");
+        let increment: f64 = self.base_increment.parse().expect("invalid base_increment");
         let qty: f64 = qty.parse().expect("invalid quantity");
         (qty / increment).round() as i64
     }
@@ -71,18 +57,13 @@ impl ProductInfo {
 
     /// Inverse of size_to_ticks.
     pub fn ticks_to_size(&self, ticks: i64) -> f64 {
-        let increment: f64 = self
-            .base_increment
-            .parse()
-            .expect("invalid base_increment");
+        let increment: f64 = self.base_increment.parse().expect("invalid base_increment");
         ticks as f64 * increment
     }
 
     /// How many decimal places to display prices with for this product,
     /// derived from quote_increment itself (e.g. "0.01" -> 2) rather
-    /// than a fixed number -- unlike orderBook.h's dump(), which
-    /// hardcodes std::setprecision(2) for every product regardless of
-    /// its actual tick size.
+    /// than a fixed number
     pub fn price_decimal_places(&self) -> usize {
         decimal_places(&self.quote_increment)
     }
@@ -92,8 +73,7 @@ impl ProductInfo {
         decimal_places(&self.base_increment)
     }
 
-    /// Splits "BTC-USD" into ("BTC", "USD") for display headers, same
-    /// as orderBook.h's getSymbolNameAndCurrency.
+    /// Splits "BTC-USD" into ("BTC", "USD") for display headers
     pub fn base_and_quote_currency(&self) -> (&str, &str) {
         match self.product_id.split_once('-') {
             Some((base, quote)) => (base, quote),
@@ -115,9 +95,7 @@ fn decimal_places(increment: &str) -> usize {
 /// Calls coinbase.jwt_generator.format_jwt_uri() + build_rest_jwt() --
 /// same sanctioned Python generator as build_ws_jwt in subscription.rs,
 /// just the REST variant. REST JWTs carry a "uri" claim identifying the
-/// specific request (e.g. "GET api.coinbase.com/api/v3/brokerage/..."),
-/// which is why this isn't just build_ws_jwt with a different name --
-/// it's a genuinely different claims shape.
+/// specific request (e.g. "GET api.coinbase.com/api/v3/brokerage/...")
 fn build_rest_jwt(method: &str, path: &str, api_key: &str, api_secret: &str) -> PyResult<String> {
     Python::attach(|py| {
         let jwt_generator = PyModule::import(py, "coinbase.jwt_generator")?;
@@ -136,9 +114,8 @@ fn build_rest_jwt(method: &str, path: &str, api_key: &str, api_secret: &str) -> 
     })
 }
 
-/// Step 1 of the quote_increment work: fetch the raw product JSON for
-/// one product_id and return it as a string, to prove REST auth works
-/// before writing a typed struct to parse it into.
+/// Fetch the raw product JSON for one product_id and return it as a
+/// string
 pub fn fetch_product_raw(product_id: &str, secrets_dir: &str) -> String {
     let api_key = std::fs::read_to_string(format!("{secrets_dir}/api_key.txt"))
         .expect("failed to read api_key.txt")
@@ -162,10 +139,10 @@ pub fn fetch_product_raw(product_id: &str, secrets_dir: &str) -> String {
         .expect("failed to read response body")
 }
 
-/// Step 4 of the quote_increment work: fetch_product_raw + parse into
-/// ProductInfo. Kept separate from fetch_product_raw rather than
-/// replacing it -- the raw version is still useful standalone for
-/// inspecting fields ProductInfo doesn't capture.
+/// Fetch_product_raw + parse into ProductInfo. Kept separate from
+/// fetch_product_raw rather than replacing it -- the raw version is
+/// still useful standalone for inspecting fields ProductInfo doesn't
+/// capture.
 pub fn fetch_product(product_id: &str, secrets_dir: &str) -> ProductInfo {
     let raw = fetch_product_raw(product_id, secrets_dir);
     serde_json::from_str(&raw).expect("failed to parse product JSON")
