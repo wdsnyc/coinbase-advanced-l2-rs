@@ -7,7 +7,7 @@ use tungstenite::{connect, Message};
 use crate::display;
 use crate::event::ChannelMessage;
 use crate::order_book::{OrderBook, PriceBook, PriceMap};
-use crate::products::{self, PrecisionTable};
+use crate::products::{self, ProductInfoTable};
 use crate::side::Side;
 use crate::subscription;
 
@@ -18,8 +18,7 @@ const WS_URL: &str = "wss://advanced-trade-ws.coinbase.com";
 /// message, then block on read() in a loop, one message at a time,
 /// same OS thread throughout. No async runtime involved.
 pub fn run(symbols: &[String], secrets_dir: &str, process_snapshots: bool) {
-    // Step 6 -- precision table, built once before the book exists.
-    let precision = products::build_precision_table(symbols, secrets_dir);
+    let product_info_table = products::build_product_info_table(symbols, secrets_dir);
 
     let subscribe_msg = subscription::get_subscribe_msg(symbols, secrets_dir);
 
@@ -97,7 +96,7 @@ pub fn run(symbols: &[String], secrets_dir: &str, process_snapshots: bool) {
             Message::Text(text) => handle_message(
                 text.as_str(),
                 &mut book,
-                &precision,
+                &product_info_table,
                 process_snapshots,
                 &current_symbol,
                 &dump_enabled,
@@ -123,7 +122,7 @@ pub fn run(symbols: &[String], secrets_dir: &str, process_snapshots: bool) {
 fn handle_message(
     text: &str,
     book: &mut PriceMap,
-    precision: &PrecisionTable,
+    product_info_table: &ProductInfoTable,
     process_snapshots: bool,
     current_symbol: &Arc<Mutex<String>>,
     dump_enabled: &Arc<AtomicBool>,
@@ -150,11 +149,11 @@ fn handle_message(
                     continue;
                 }
 
-                let product = match precision.get(&event.product_id) {
+                let product = match product_info_table.get(&event.product_id) {
                     Some(p) => p,
                     None => {
                         eprintln!(
-                            "no precision info for {} -- skipping {} update(s)",
+                            "no product_info_table info for {} -- skipping {} update(s)",
                             event.product_id,
                             event.updates.len()
                         );
@@ -199,7 +198,7 @@ fn handle_message(
             Some(ob) => ob,
             None => return, // no data for this symbol yet
         };
-        let product = match precision.get(&symbol) {
+        let product = match product_info_table.get(&symbol) {
             Some(p) => p,
             None => return, // shouldn't happen -- symbol came from the validated list
         };

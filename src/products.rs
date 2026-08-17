@@ -153,11 +153,11 @@ pub fn fetch_product(product_id: &str, secrets_dir: &str) -> ProductInfo {
 /// up a product's entry here (by product_id) before converting a
 /// PriceLevelUpdate's price_level/new_quantity strings into ticks for
 /// PriceBook::book_add.
-pub type PrecisionTable = HashMap<String, ProductInfo>;
+pub type ProductInfoTable = HashMap<String, ProductInfo>;
 
 /// Builds the lookup table above.
-pub fn build_precision_table(symbols: &[String], secrets_dir: &str) -> PrecisionTable {
-    let mut table = PrecisionTable::new();
+pub fn build_product_info_table(symbols: &[String], secrets_dir: &str) -> ProductInfoTable {
+    let mut table = ProductInfoTable::new();
     for symbol in symbols {
         let product_info = fetch_product(symbol, secrets_dir);
         table.insert(symbol.clone(), product_info);
